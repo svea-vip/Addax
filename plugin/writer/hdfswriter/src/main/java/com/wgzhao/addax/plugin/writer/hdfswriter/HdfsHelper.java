@@ -35,6 +35,7 @@ import org.apache.avro.Conversions;
 import org.apache.avro.generic.GenericData;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.MutablePair;
+import org.apache.commons.lang3.Validate;
 import org.apache.hadoop.fs.*;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.ql.exec.vector.*;
@@ -643,46 +644,62 @@ public class HdfsHelper {
     }
 
     private MessageType generateParquetSchema(List<Configuration> columns) {
-        String type;
-        String fieldName;
-        Type t;
-        Types.MessageTypeBuilder builder = Types.buildMessage();
-        Type.Repetition repetition = Type.Repetition.OPTIONAL;
+        Types.MessageTypeBuilder typeBuilder = Types.buildMessage();
         for (Configuration column : columns) {
-            type = column.getString(Key.TYPE).trim().toUpperCase();
-            fieldName = column.getString(Key.NAME);
-            switch (type) {
-                case "INT":
-                    t = Types.primitive(PrimitiveType.PrimitiveTypeName.INT32, repetition).named(fieldName);
+            String name = column.getString(Key.NAME);
+            String colType = column.getString(Key.TYPE).trim()
+            Validate.notNull(name, "column.name can't be null");
+            Validate.notNull(colType, "column.type can't be null");
+            switch (colType.toLowerCase()) {
+                case "tinyint":
+                case "smallint":
+                case "int":
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.INT32).named(name);
                     break;
-                case "DECIMAL":
+                case "bigint":
+                case "long":
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.INT64).named(name);
+                    break;
+                case "float":
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.FLOAT).named(name);
+                    break;
+                case "double":
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.DOUBLE).named(name);
+                    break;
+                case "binary":
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.BINARY).named(name);
+                    break;
+                case "char":
+                case "varchar":
+                case "string":
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.BINARY).as(OriginalType.UTF8).named(name);
+                    break;
+                case "boolean":
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.BOOLEAN).named(name);
+                    break;
+                case "timestamp":
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.INT96).named(name);
+                    break;
+                case "date":
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.INT32).as(OriginalType.DATE).named(name);
+                    break;
+                case "decimal":
                     // use fixed 16 bytes array
                     int prec = column.getInt(Key.PRECISION, Constant.DEFAULT_DECIMAL_MAX_PRECISION);
                     int scale = column.getInt(Key.SCALE, Constant.DEFAULT_DECIMAL_MAX_SCALE);
-                    t = Types.primitive(PrimitiveType.PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY, repetition)
-                            .length(16)
-                            .as(decimalType(scale, prec))
-                            .named(fieldName);
-                    break;
-                case "STRING":
-                    t = Types.primitive(PrimitiveType.PrimitiveTypeName.BINARY, repetition).as(LogicalTypeAnnotation.stringType()).named(fieldName);
-                    break;
-                case "BYTES":
-                    t = Types.primitive(PrimitiveType.PrimitiveTypeName.BINARY, repetition).named(fieldName);
-                    break;
-                case "DATE":
-                    t = Types.primitive(PrimitiveType.PrimitiveTypeName.INT32, repetition).as(LogicalTypeAnnotation.dateType()).named(fieldName);
-                    break;
-                case "TIMESTAMP":
-                    t = Types.primitive(PrimitiveType.PrimitiveTypeName.INT96, repetition).named(fieldName);
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY)
+                                .as(OriginalType.DECIMAL)
+                                .precision(prec)
+                                .scale(scale)
+                                .length(16)
+                                .named(name);
                     break;
                 default:
-                    t = Types.primitive(PrimitiveType.PrimitiveTypeName.valueOf(type), Type.Repetition.OPTIONAL).named(fieldName);
+                    typeBuilder.optional(PrimitiveType.PrimitiveTypeName.BINARY).named(name);
                     break;
             }
-            builder.addField(t);
         }
-        return builder.named("addax");
+        return typeBuilder.named("addax");
     }
 
     /**
